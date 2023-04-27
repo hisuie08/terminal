@@ -422,26 +422,79 @@ catch (...)
 {
     size_t ch = chBeg;
 
-    for (const auto& s : til::utf16_iterator{ chars })
+    auto it = chars.begin();
+    const auto end = chars.end();
+
+    while (it != end)
     {
-        const auto wide = til::at(s, 0) < 0x80 ? false : IsGlyphFullWidth(s);
-        const auto colEndNew = gsl::narrow_cast<uint16_t>(colEnd + 1u + wide);
-        if (colEndNew > colLimit)
+        // MSVC is surprisingly smart about this if condition, hoists it outside of the
+        // loop and puts it at the end of ROW::ReplaceText(), past WriteHelper::Finish().
+        // Exactly what I wanted!
+        if (*it >= 0x80) [[unlikely]]
+        {
+            while (it != end)
+            {
+                unsigned int width = 1;
+                auto ptr = &*it;
+                const auto wch = *ptr;
+                size_t advance = 1;
+
+                ++it;
+
+                if (wch >= 0x80)
+                {
+                    if (til::is_surrogate(wch))
+                    {
+                        if (it != end && til::is_leading_surrogate(wch) && til::is_trailing_surrogate(*it))
+                        {
+                            advance = 2;
+                            ++it;
+                        }
+                        else
+                        {
+                            ptr = &UNICODE_REPLACEMENT;
+                        }
+                    }
+
+                    width = IsGlyphFullWidth({ ptr, advance }) + 1u;
+                }
+
+                const auto colEndNew = gsl::narrow_cast<uint16_t>(colEnd + width);
+                if (colEndNew > colLimit)
+                {
+                    colEndDirty = colLimit;
+                    charsConsumed = ch - chBeg;
+                    return;
+                }
+
+                til::at(row._charOffsets, colEnd++) = gsl::narrow_cast<uint16_t>(ch);
+                if (colEnd < colEndNew)
+                {
+                    til::at(row._charOffsets, colEnd++) = gsl::narrow_cast<uint16_t>(ch | CharOffsetsTrailer);
+                }
+
+                ch += advance;
+            }
+
+            colEndDirty = colEnd;
+            charsConsumed = ch - chBeg;
+            return;
+        }
+
+        if (colEnd >= colLimit)
         {
             colEndDirty = colLimit;
+            charsConsumed = ch - chBeg;
             break;
         }
 
-        til::at(row._charOffsets, colEnd++) = gsl::narrow_cast<uint16_t>(ch);
-        if (wide)
-        {
-            til::at(row._charOffsets, colEnd++) = gsl::narrow_cast<uint16_t>(ch | CharOffsetsTrailer);
-        }
-
-        colEndDirty = colEnd;
-        ch += s.size();
+        til::at(row._charOffsets, colEnd) = gsl::narrow_cast<uint16_t>(ch);
+        ++colEnd;
+        ++ch;
+        ++it;
     }
 
+    colEndDirty = colEnd;
     charsConsumed = ch - chBeg;
 }
 
