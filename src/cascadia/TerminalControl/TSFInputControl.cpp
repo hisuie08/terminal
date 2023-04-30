@@ -28,7 +28,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         // Set the input scope to AlphanumericHalfWidth in order to facilitate those CJK input methods to open in English mode by default.
         // AlphanumericHalfWidth scope doesn't prevent input method from switching to composition mode, it accepts any character too.
         // Besides, Text scope turns on typing intelligence, but that doesn't work in this project.
-        _editContext.InputScope(CoreTextInputScope::AlphanumericHalfWidth);
+        _editContext.InputScope(CoreTextInputScope::Text);
 
         _textRequestedRevoker = _editContext.TextRequested(winrt::auto_revoke, { this, &TSFInputControl::_textRequestedHandler });
 
